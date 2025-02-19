@@ -16,7 +16,7 @@ from src.utils import validate_file_path
 @dataclass
 class DataBaseConfig:
     """Configuration for database persistence"""
-    PERSIST_DIR: str = os.path.join("artifacts", "chroma_db")
+    PERSIST_DIR: str = os.path.join("RAG_BUILDER","artifacts", "chroma_db")
 
 
 class DataBase:

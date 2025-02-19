@@ -6,7 +6,7 @@ from src.logger import logging
 import sys
 @dataclass
 class DataIngestionConfig:
-    base_path: str = os.path.join("artifacts", "ingestion")
+    base_path: str = os.path.join("RAG_BUILDER","artifacts", "ingestion")
 
 
 class DataIngestion:

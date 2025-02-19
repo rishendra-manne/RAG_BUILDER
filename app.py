@@ -71,7 +71,6 @@ if 'messages' not in st.session_state:
 if 'current_pipeline_id' not in st.session_state:
     st.session_state.current_pipeline_id = None
 
-
 def process_document(uploaded_file, pipeline_id, action):
     """Process the uploaded PDF document and perform specified action."""
     try:
@@ -83,53 +82,6 @@ def process_document(uploaded_file, pipeline_id, action):
         return result
     except Exception as e:
         raise CustomException(e, sys)
-
-
-def chat_interface():
-    """Handle chat interface and query processing."""
-    # Display chat messages
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.write(message["content"])
-            if message.get("sources"):
-                with st.expander("Sources"):
-                    for idx, source in enumerate(message["sources"], 1):
-                        st.markdown(f"**Source {idx}:**\n{source}")
-
-    # Chat input
-    if prompt := st.chat_input("Ask your question..."):
-        # Add user message
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.write(prompt)
-
-        # Get pipeline ID from session state
-        if not st.session_state.current_pipeline_id:
-            with st.chat_message("assistant"):
-                st.write("Please select a pipeline ID first.")
-            st.session_state.messages.append({"role": "assistant", "content": "Please select a pipeline ID first."})
-            return
-
-        # Process query
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                response = predict_pipeline.query_pipeline(int(st.session_state.current_pipeline_id), prompt)
-                if response == -1:
-                    message = "Pipeline not found. Please check the pipeline ID."
-                    st.write(message)
-                    st.session_state.messages.append({"role": "assistant", "content": message})
-                else:
-                    st.write(response["answer"])
-                    if response.get("sources"):
-                        with st.expander("Sources"):
-                            for idx, source in enumerate(response["sources"], 1):
-                                st.markdown(f"**Source {idx}:**\n{source}")
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": response["answer"],
-                        "sources": response.get("sources", [])
-                    })
-
 
 def main():
     # Header
@@ -179,9 +131,10 @@ def main():
                 else:
                     st.warning("Please provide a Pipeline ID.")
 
-    # Main content area
+    # Main content area - restructured to avoid nesting chat_input
     col1, col2 = st.columns([2, 1])
 
+    # Right column (System Info)
     with col2:
         st.markdown('<div class="info-box">', unsafe_allow_html=True)
         st.subheader("Active Pipeline")
@@ -207,12 +160,42 @@ def main():
             st.success(f"Active Pipeline: {st.session_state.current_pipeline_id}")
         st.markdown('</div>', unsafe_allow_html=True)
 
+    # Left column (Chat Interface)
     with col1:
-        # Chat Interface
         st.markdown('<div class="info-box">', unsafe_allow_html=True)
-        chat_interface()
+        # Display chat messages
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.write(message["content"])
+                if message.get("sources"):
+                    with st.expander("Sources"):
+                        for idx, source in enumerate(message["sources"], 1):
+                            st.markdown(f"**Source {idx}:**\n{source}")
         st.markdown('</div>', unsafe_allow_html=True)
 
+    # Chat input - moved outside of all containers
+    if prompt := st.chat_input("Ask your question..."):
+        # Add user message
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
+        # Get pipeline ID from session state
+        if not st.session_state.current_pipeline_id:
+            st.session_state.messages.append({"role": "assistant", "content": "Please select a pipeline ID first."})
+            st.experimental_rerun()
+
+        # Process query
+        with st.spinner("Thinking..."):
+            response = predict_pipeline.query_pipeline(int(st.session_state.current_pipeline_id), prompt)
+            if response == -1:
+                message = "Pipeline not found. Please check the pipeline ID."
+                st.session_state.messages.append({"role": "assistant", "content": message})
+            else:
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": response["answer"],
+                    "sources": response.get("sources", [])
+                })
+        st.experimental_rerun()
 
 if __name__ == "__main__":
     main()
