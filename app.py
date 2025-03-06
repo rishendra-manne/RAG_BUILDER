@@ -1,14 +1,9 @@
 import streamlit as st
-from src.components.data_ingestion import DataIngestion
-from src.components.data_transformation import DataTransformation
-from src.components.database import DataBase
-from src.pipelines.training_pipeline import Pipeline
-from src.pipelines.prediction_pipeline import PredictPipeline
+import requests
 from src.exception import CustomException
-from src.logger import logging
 import sys
-import time
 
+# Configure Streamlit page
 # Configure Streamlit page
 st.set_page_config(
     page_title="RAG Assistant",
@@ -17,7 +12,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
 st.markdown("""
     <style>
         .stButton>button {
@@ -61,27 +55,57 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Initialize pipelines
-pipeline = Pipeline()
-predict_pipeline = PredictPipeline()
+# Base URL for the FastAPI server
+BASE_URL = "https://8001-01jmep9axx72ewy4mdzwddcqsd.cloudspaces.litng.ai"  # Update with your actual server URL
 
 # Initialize session state
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 if 'current_pipeline_id' not in st.session_state:
     st.session_state.current_pipeline_id = None
+if 'uploaded_files' not in st.session_state:
+    st.session_state.uploaded_files = {}
+
 
 def process_document(uploaded_file, pipeline_id, action):
     """Process the uploaded PDF document and perform specified action."""
     try:
-        result = 0
         if action == "create":
-            result = pipeline.create_pipeline(pipeline_id=int(pipeline_id), docs_file=uploaded_file)
+            # Prepare the file for upload
+            files = {"file": (uploaded_file.name, uploaded_file, "application/pdf")}
+
+            # Send request to create pipeline
+            response = requests.post(
+                f"{BASE_URL}/create_pipeline/{pipeline_id}",
+                files=files
+            )
+
+            # Check response
+            if response.status_code == 200:
+                # Store uploaded file info
+                st.session_state.uploaded_files[pipeline_id] = uploaded_file.name
+                return 1
+            elif response.status_code == 400:
+                return -1
+            else:
+                return 0
+
         elif action == "remove":
-            result = pipeline.delete_pipeline(int(pipeline_id))
-        return result
+            # Send request to delete pipeline
+            response = requests.delete(f"{BASE_URL}/delete_pipeline/{pipeline_id}")
+
+            # Check response
+            if response.status_code == 200:
+                # Remove file info if exists
+                if pipeline_id in st.session_state.uploaded_files:
+                    del st.session_state.uploaded_files[pipeline_id]
+                return 1
+            else:
+                return 0
+
     except Exception as e:
         raise CustomException(e, sys)
+
 
 def main():
     # Header
@@ -102,7 +126,37 @@ def main():
                         with st.spinner("Creating pipeline..."):
                             result = process_document(uploaded_file, pipeline_id, "create")
                             if result == 1:
+                                # Enhanced code block with more context
+                                st.code(f"""# Example Python Script for Querying RAG Pipeline
+    import requests
+
+    # Base URL of your RAG service
+    BASE_URL = "{BASE_URL}"
+
+    # Your specific pipeline ID
+    PIPELINE_ID = "{pipeline_id}"
+
+    # Function to query the pipeline
+    def query_rag_pipeline(query):
+        response = requests.post(
+            f"{{BASE_URL}}/query_pipeline/{{PIPELINE_ID}}", 
+            params={{"query": query}}
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            print("Answer:", result.get("answer"))
+            print("Sources:", result.get("sources"))
+        else:
+            print("Query failed!")
+
+    # Example usage
+    query_rag_pipeline("Your question here")
+    """, language="python")
+
                                 st.success("Pipeline created successfully!")
+                                st.session_state.current_pipeline_id = pipeline_id
+
                             elif result == -1:
                                 st.error("Pipeline ID already exists.")
                             else:
@@ -124,6 +178,7 @@ def main():
                                 st.success("Pipeline deleted successfully!")
                                 if st.session_state.current_pipeline_id == delete_pipeline_id:
                                     st.session_state.current_pipeline_id = None
+                                    st.session_state.messages = []
                             else:
                                 st.error("Pipeline not found.")
                     except Exception as e:
@@ -131,7 +186,7 @@ def main():
                 else:
                     st.warning("Please provide a Pipeline ID.")
 
-    # Main content area - restructured to avoid nesting chat_input
+    # Main content area
     col1, col2 = st.columns([2, 1])
 
     # Right column (System Info)
@@ -156,8 +211,13 @@ def main():
         st.subheader("System Information")
         st.info("Using Llama Model for RAG")
         st.progress(100, "System Ready")
+
+        # Show uploaded file if pipeline is active
         if st.session_state.current_pipeline_id:
             st.success(f"Active Pipeline: {st.session_state.current_pipeline_id}")
+            if st.session_state.current_pipeline_id in st.session_state.uploaded_files:
+                st.write(f"📄 Uploaded File: {st.session_state.uploaded_files[st.session_state.current_pipeline_id]}")
+
         st.markdown('</div>', unsafe_allow_html=True)
 
     # Left column (Chat Interface)
@@ -166,14 +226,15 @@ def main():
         # Display chat messages
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
-                st.write(message["content"])
+                st.markdown(f'<div class="{message["role"]}-message">{message["content"]}</div>',
+                            unsafe_allow_html=True)
                 if message.get("sources"):
                     with st.expander("Sources"):
                         for idx, source in enumerate(message["sources"], 1):
                             st.markdown(f"**Source {idx}:**\n{source}")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # Chat input - moved outside of all containers
+    # Chat input
     if prompt := st.chat_input("Ask your question..."):
         # Add user message
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -185,17 +246,34 @@ def main():
 
         # Process query
         with st.spinner("Thinking..."):
-            response = predict_pipeline.query_pipeline(int(st.session_state.current_pipeline_id), prompt)
-            if response == -1:
-                message = "Pipeline not found. Please check the pipeline ID."
-                st.session_state.messages.append({"role": "assistant", "content": message})
-            else:
+            try:
+                # Send query to FastAPI endpoint
+                response = requests.post(
+                    f"{BASE_URL}/query_pipeline/{st.session_state.current_pipeline_id}",
+                    params={"query": prompt}
+                )
+
+                # Check response
+                if response.status_code == 200:
+                    result = response.json()
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": result.get("answer", "No response"),
+                        "sources": result.get("sources", [])
+                    })
+                else:
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": "Error processing query."
+                    })
+            except Exception as e:
                 st.session_state.messages.append({
                     "role": "assistant",
-                    "content": response["answer"],
-                    "sources": response.get("sources", [])
+                    "content": f"Error: {str(e)}"
                 })
+
         st.experimental_rerun()
+
 
 if __name__ == "__main__":
     main()

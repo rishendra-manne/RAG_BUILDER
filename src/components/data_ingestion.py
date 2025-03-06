@@ -32,7 +32,7 @@ class DataIngestion:
             storage_path = os.path.join(
                 self.config.base_path,
                 str(pipeline_id),
-                file.name
+                file.filename
             )
 
             # Ensure directory exists
@@ -40,7 +40,7 @@ class DataIngestion:
 
             # Write file contents
             with open(storage_path, 'wb') as f:
-                f.write(file.getvalue())
+                f.write(file.file.read())
 
             logging.info(f"File successfully stored at: {storage_path}")
             return storage_path
