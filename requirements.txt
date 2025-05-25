@@ -1,11 +1,11 @@
-pandas
-numpy
-langchain
-fastapi
-chromadb
-streamlit
-transformers
-torch
-pypdf
-sentence-transformers
--e.
+pandas==2.2.2
+numpy==1.26.4
+langchain==0.1.21
+fastapi==0.111.0
+chromadb==0.4.24
+streamlit==1.35.0
+transformers==4.41.1
+torch==2.2.2
+pypdf==4.2.0
+sentence-transformers==2.6.1
+-e .
